@@ -1,0 +1,20 @@
+name: Send IT Trend Brief
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "40 0 * * 1-5"
+
+jobs:
+  send-brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Send card to Google Chat
+        env:
+          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+        run: python send_it_trend_brief.py
