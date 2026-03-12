@@ -9,6 +9,7 @@ Google Chat webhook bot that sends a weekday 09:40 KST IT trend briefing card.
 - TechCrunch 1 item
 - The Verge 1 item
 - Hacker News 1 item
+- Brunch IT 트렌드 updates up to 5 items when there are same-day updates
 
 ## Schedule
 

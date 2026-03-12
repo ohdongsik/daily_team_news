@@ -6,13 +6,14 @@ import sys
 from datetime import datetime, timedelta, timezone
 from html import escape, unescape
 from typing import Dict, List, Optional
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urljoin
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
 KST = timezone(timedelta(hours=9))
 WEEKDAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
+BRUNCH_KEYWORD_URL = "https://brunch.co.kr/keyword/IT_%ED%8A%B8%EB%A0%8C%EB%93%9C?q=g"
 
 
 def fetch_url(url: str, timeout: int = 15) -> str:
@@ -147,6 +148,53 @@ def fetch_hn_front_page(limit: int = 1) -> List[Dict[str, str]]:
     return results
 
 
+def fetch_brunch_updates(now: datetime, limit: int = 5) -> List[Dict[str, str]]:
+    html = fetch_url(BRUNCH_KEYWORD_URL)
+    match = re.search(r"var articleList = (\[.*?\]);", html, re.DOTALL)
+    if not match:
+        return []
+
+    raw_items = json.loads(match.group(1))
+    today = now.date()
+    items: List[Dict[str, str]] = []
+    seen = set()
+
+    for entry in raw_items:
+        article = entry.get("article", {})
+        profile = entry.get("profile", {})
+
+        title = (article.get("title") or "").strip()
+        user_id = (article.get("userId") or "").strip()
+        article_no = article.get("no")
+        update_ms = article.get("updateTime") or article.get("publishTime") or 0
+
+        if not title or not user_id or not article_no or not update_ms:
+            continue
+
+        updated_at = datetime.fromtimestamp(update_ms / 1000, tz=KST)
+        if updated_at.date() != today:
+            continue
+
+        link = urljoin("https://brunch.co.kr", f"/@{user_id}/{article_no}")
+        if link in seen:
+            continue
+
+        seen.add(link)
+        items.append(
+            {
+                "title": clean_news_title(title),
+                "link": link,
+                "author": (profile.get("userName") or article.get("userName") or "").strip(),
+                "updated_label": updated_at.strftime("%H:%M"),
+                "pub_date": updated_at.isoformat(),
+            }
+        )
+        if len(items) >= limit:
+            break
+
+    return items
+
+
 def safe_get(items: List[Dict[str, str]], idx: int, fallback_title: str) -> Dict[str, str]:
     if idx < len(items):
         return items[idx]
@@ -197,6 +245,7 @@ def collect_brief_data() -> Dict[str, object]:
         verge_items = parse_standard_feed("https://www.theverge.com/rss/index.xml", limit=1)
 
     hn_items = fetch_hn_front_page(limit=1)
+    brunch_items = fetch_brunch_updates(now, limit=5)
 
     market_notes = [
         "국내 산업/정책 변화가 분기 우선순위에 직접 영향",
@@ -218,6 +267,7 @@ def collect_brief_data() -> Dict[str, object]:
         "techcrunch_item": safe_get(techcrunch_items, 0, "오늘 주요 글로벌 비즈니스 기사"),
         "verge_item": safe_get(verge_items, 0, "오늘 주요 제품 감도 기사"),
         "hn_item": safe_get(hn_items, 0, "오늘 주요 Hacker News 토픽"),
+        "brunch_items": brunch_items,
         "market_notes": market_notes,
         "practice_notes": practice_notes,
     }
@@ -335,6 +385,40 @@ def build_card_payload() -> Dict[str, object]:
             ],
         },
     ]
+
+    brunch_items = data["brunch_items"]
+    if brunch_items:
+        brunch_widgets: List[Dict[str, object]] = []
+        for item in brunch_items:
+            author = escape(item.get("author") or "Brunch")
+            updated_label = escape(item.get("updated_label") or "")
+            meta = f"{author} · 오늘 {updated_label} 업데이트" if updated_label else author
+            brunch_widgets.append(
+                {
+                    "decoratedText": {
+                        "text": f"<b>{escape(item['title'])}</b><br/><font color=\"#5f6368\">{meta}</font>",
+                        "wrapText": True,
+                    }
+                }
+            )
+            brunch_widgets.append(
+                {
+                    "buttonList": {
+                        "buttons": [
+                            {"text": "바로가기 >", "onClick": {"openLink": {"url": item["link"]}}}
+                        ]
+                    }
+                }
+            )
+
+        sections.append(
+            {
+                "header": "6) Brunch IT 트렌드 업데이트",
+                "widgets": brunch_widgets,
+                "collapsible": True,
+                "uncollapsibleWidgetsCount": 2,
+            }
+        )
 
     return {
         "cardsV2": [
