@@ -3,6 +3,7 @@ name: Send IT Trend Brief
 on:
   workflow_dispatch:
   schedule:
+    # GitHub may disable scheduled workflows after long repository inactivity.
     - cron: "40 0 * * 1-5"
 
 jobs:
